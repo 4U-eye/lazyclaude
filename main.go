@@ -1,7 +1,4 @@
 // lazyclaude is a lazygit-style TUI for monitoring local Claude Code sessions.
-//
-// Phase 1 of the Go port: data layer + plain-text listing.
-// The interactive TUI (bubbletea) arrives in a later phase.
 package main
 
 import (
@@ -9,18 +6,26 @@ import (
 	"fmt"
 	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
+
 	"github.com/4U-eye/lazyclaude/internal/claude"
 	"github.com/4U-eye/lazyclaude/internal/format"
+	"github.com/4U-eye/lazyclaude/internal/ui"
 )
 
 func main() {
 	list := flag.Bool("list", false, "print sessions as plain text and exit")
 	flag.Parse()
 
-	if !*list {
-		fmt.Fprintln(os.Stderr, "TUI is not ported yet (Phase 2). Showing --list output:")
+	if *list {
+		runList()
+		return
 	}
-	runList()
+	p := tea.NewProgram(ui.New(), tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
 
 func runList() {
