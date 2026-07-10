@@ -1,0 +1,38 @@
+version: 2
+
+project_name: lazyclaude
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - formats: [tar.gz]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+
+changelog:
+  use: github-native
+
+release:
+  draft: false
+
+# Homebrew tap (requires a 4U-eye/homebrew-tap repository and a
+# HOMEBREW_TAP_GITHUB_TOKEN secret; uncomment once the tap repo exists)
+#
+# brews:
+#   - repository:
+#       owner: 4U-eye
+#       name: homebrew-tap
+#       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+#     homepage: https://github.com/4U-eye/lazyclaude
+#     description: "lazygit-style TUI for monitoring local Claude Code sessions"
+#     license: MIT

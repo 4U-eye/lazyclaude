@@ -1,30 +1,76 @@
 # lazyclaude
 
-A lazygit-style terminal UI for monitoring your local [Claude Code](https://claude.com/claude-code) sessions — see at a glance which sessions are busy, waiting for your input, or idle, along with their token usage. Built around tmux.
-
-> **Status: early development.** This is a Go port of a working Python prototype.
-> Phase 1 (data layer + plain listing) is done; the interactive TUI is coming next.
-
-## What it does
+A lazygit-style terminal UI for monitoring your local [Claude Code](https://claude.com/claude-code) sessions — see at a glance which sessions are busy, waiting for your input, or idle, along with their token usage. Watch any session's terminal live, send it instructions, and create or kill sessions, all without leaving the dashboard. Built around tmux.
 
 ```
-U    PID  STATUS  MODEL      CTX     OUT    TOTAL   AGE  CWD          NAME
-!  12345  busy    dummy-1   240k    277k    42.6M    2m  ~/projects   Sample refactoring session
-   23456  waiting dummy-1   158k    101k     6.6M    1h  ~/projects   Fix flaky integration test
-   34567  idle    dummy-2   129k     33k     4.4M    1d  ~/oss/tool   Add dark mode support
+ lazyclaude                    9 sessions · 2 busy · 1 waiting · 3 unread   14:32
+╭─ Sessions · 3 unread ─────────────╮╭─ Sample refactoring session ─────────────╮
+│ ❯ ! ● Sample refactoring session  ││  ● busy · 2m ago                         │
+│     ◐ Fix flaky integration test  ││                                          │
+│     ○ Add dark mode support       ││  model    dummy-1 · v2.x.x               │
+│     ○ Write API documentation     ││  pane     work:3.1 · pid 12345           │
+│                                   ││  dir      ~/projects/sample              │
+│                                   ││ ── Tokens ─────────────────────────────  │
+│                                   ││  context  240k                           │
+│                                   ││  in / out 21k / 277k  (108 msgs)         │
+│                                   ││  total    42.6M                          │
+│                                   ││ ── Terminal · work:3.1 · live ─────────  │
+│                                   ││  (live color preview of the session)     │
+╰───────────────────────────────────╯╰──────────────────────────────────────────╯
+ j/k 移動 · enter 開く · n 新規 · x 終了 · r 更新 · q quit
 ```
 
-- **Session list** with status (`busy` / `waiting` / `idle`), unread marker (`!`),
-  model, and age
-- **Token usage**: current context size, cumulative output, and total consumed
-  tokens per session
-- **Unread tracking**: sessions that produced output since you last checked them
+## Features
 
-Planned (ported from the prototype, arriving in later phases):
+- **Session dashboard**: status (`busy` / `waiting` / `idle`), model, age,
+  and token usage (current context size, cumulative in/out/cache, total)
+- **Live terminal preview**: the detail pane shows the selected session's
+  actual terminal, in color, refreshed twice a second
+- **Fullscreen viewer** (`enter`): watch a session up close, **send it
+  instructions** (`i`), or **jump to its tmux pane** (`a`)
+- **Unread tracking** (`!` badge): sessions that produced output since you
+  last opened them; persisted across restarts
+- **Session lifecycle**: create a new Claude Code session in any directory
+  (`n`) or kill one (`x`) without leaving the dashboard
 
-- Interactive TUI (bubbletea): session list + live terminal preview of each session
-- Send instructions to a session, jump to its tmux pane
-- Create / kill sessions from the UI
+## Install
+
+```bash
+go install github.com/4U-eye/lazyclaude@latest
+```
+
+Or grab a binary from [Releases](https://github.com/4U-eye/lazyclaude/releases).
+
+## Usage
+
+```bash
+lazyclaude          # TUI
+lazyclaude --list   # plain-text session listing (for scripts)
+```
+
+### Keybindings
+
+| Key | Action |
+|-----|--------|
+| `j` / `k` | move selection |
+| `enter` | open fullscreen viewer for the selected session |
+| `i` (viewer) | type an instruction and send it to the session |
+| `a` (viewer) | jump to the session's tmux pane |
+| `n` | create a new Claude Code session (prompts for directory) |
+| `x` | kill the selected session (with confirmation) |
+| `g` / `G` | first / last |
+| `r` | refresh now |
+| `q` / `esc` | back / quit |
+
+### Configuration
+
+Environment variables:
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `LAZYCLAUDE_CLAUDE_SESSION` | `claude` | tmux session that hosts new sessions created with `n` |
+| `LAZYCLAUDE_CLAUDE_COMMAND` | `claude` | command typed into the new pane (runs via your shell, so aliases apply) |
+| `LAZYCLAUDE_NEW_DIR` | `~` | default working directory for `n` |
 
 ## How it works
 
@@ -36,30 +82,29 @@ Claude Code keeps a live session registry and per-session transcripts on disk:
 | `~/.claude/projects/{escaped-cwd}/{sessionId}.jsonl` | transcript: messages, token usage, session title |
 
 lazyclaude reads these (read-only), filters out dead processes, and aggregates
-token usage. tmux integration (pane discovery via tty matching, `capture-pane`,
-`send-keys`) powers the interactive features.
+token usage. Sessions are matched to tmux panes by tty, which powers the live
+preview (`capture-pane -e`), instruction sending (`send-keys`), and jumping.
+Read/unread state lives in `~/.local/state/lazyclaude/seen.json`.
 
-> Note: these are undocumented internal formats of Claude Code and may break
-> with future Claude Code releases. Parsing is intentionally defensive.
-
-## Install
-
-```bash
-go install github.com/4U-eye/lazyclaude@latest
-```
-
-## Usage
-
-```bash
-lazyclaude --list   # plain-text session listing
-lazyclaude          # TUI (not ported yet — falls back to --list output)
-```
+> Note: the registry and transcript formats are undocumented internals of
+> Claude Code and may change with future releases. Parsing is intentionally
+> defensive.
 
 ## Requirements
 
 - macOS / Linux
 - Claude Code
-- tmux (for the interactive features; listing works without it)
+- tmux (sessions running outside tmux are listed, but live preview /
+  send / jump need tmux)
+
+## Development
+
+```bash
+go test ./...   # includes tmux integration tests (skipped when tmux is absent)
+go build
+```
+
+Releases are cut by pushing a `v*` tag (GoReleaser via GitHub Actions).
 
 ## License
 
