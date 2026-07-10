@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/4U-eye/lazyclaude/internal/claude"
+	"github.com/4U-eye/lazyclaude/internal/config"
 	"github.com/4U-eye/lazyclaude/internal/tmux"
 )
 
@@ -75,10 +76,7 @@ type Model struct {
 
 	paneCache map[int]paneEntry
 
-	// tmux integration knobs (env-overridable for tests and custom setups)
-	claudeSession string
-	claudeCommand string
-	newDirDefault string
+	cfg config.Config
 }
 
 // New builds the initial model.
@@ -87,22 +85,13 @@ func New() Model {
 	ti.Prompt = "❯ "
 	ti.CharLimit = 2000
 	return Model{
-		store:         claude.DefaultStore(),
-		seenPath:      claude.DefaultSeenPath(),
-		seen:          claude.LoadSeen(claude.DefaultSeenPath()),
-		input:         ti,
-		paneCache:     map[int]paneEntry{},
-		claudeSession: envOr("LAZYCLAUDE_CLAUDE_SESSION", "claude"),
-		claudeCommand: envOr("LAZYCLAUDE_CLAUDE_COMMAND", "claude"),
-		newDirDefault: envOr("LAZYCLAUDE_NEW_DIR", "~"),
+		store:     claude.DefaultStore(),
+		seenPath:  claude.DefaultSeenPath(),
+		seen:      claude.LoadSeen(claude.DefaultSeenPath()),
+		input:     ti,
+		paneCache: map[int]paneEntry{},
+		cfg:       config.Load(),
 	}
-}
-
-func envOr(key, def string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return def
 }
 
 type tickMsg time.Time
@@ -260,7 +249,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		m.mode = modeInput
 		m.inputFor = inputNewDir
-		m.input.Placeholder = "作業dir (空=" + m.newDirDefault + ")"
+		m.input.Placeholder = "作業dir (空=" + m.cfg.NewDir + ")"
 		m.input.SetValue("")
 		m.input.Focus()
 	case "x":
@@ -322,9 +311,9 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.mode = modeList
 			dir := value
 			if dir == "" {
-				dir = m.newDirDefault
+				dir = m.cfg.NewDir
 			}
-			paneID, err := tmux.CreateSession(m.claudeSession, dir, m.claudeCommand)
+			paneID, err := tmux.CreateSession(m.cfg.ClaudeSession, dir, m.cfg.ClaudeCommand)
 			if err != nil {
 				m.setNotice("✗ " + err.Error())
 				return m, nil

@@ -64,13 +64,25 @@ lazyclaude --list   # plain-text session listing (for scripts)
 
 ### Configuration
 
-Environment variables:
+Settings load from `~/.config/lazyclaude/config.toml` (honors `XDG_CONFIG_HOME`);
+environment variables override the file.
 
-| Variable | Default | Meaning |
-|----------|---------|---------|
-| `LAZYCLAUDE_CLAUDE_SESSION` | `claude` | tmux session that hosts new sessions created with `n` |
-| `LAZYCLAUDE_CLAUDE_COMMAND` | `claude` | command typed into the new pane (runs via your shell, so aliases apply) |
-| `LAZYCLAUDE_NEW_DIR` | `~` | default working directory for `n` |
+```toml
+# default working directory when creating a session with `n`
+new_dir = "~/projects"
+
+# tmux session that hosts new sessions (default: claude)
+claude_session = "claude"
+
+# command typed into the new pane; runs via your shell, so aliases apply
+claude_command = "claude"
+```
+
+| Key | Env override | Default |
+|-----|--------------|---------|
+| `new_dir` | `LAZYCLAUDE_NEW_DIR` | `~` |
+| `claude_session` | `LAZYCLAUDE_CLAUDE_SESSION` | `claude` |
+| `claude_command` | `LAZYCLAUDE_CLAUDE_COMMAND` | `claude` |
 
 ## How it works
 
