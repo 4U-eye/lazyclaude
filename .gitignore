@@ -1,0 +1,9 @@
+# build artifacts
+/lazyclaude
+/dist/
+
+# editor
+.idea/
+.vscode/
+*.swp
+.DS_Store
