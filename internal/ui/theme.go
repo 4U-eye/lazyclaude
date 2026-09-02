@@ -2,38 +2,39 @@ package ui
 
 import "github.com/charmbracelet/lipgloss"
 
-// 256-color palette. lipgloss/termenv degrades gracefully on 8/16-color terminals.
+// Cyberpunk 256-color palette. lipgloss/termenv degrades gracefully on 8/16-color terminals.
 var (
-	cBusy   = lipgloss.Color("114") // soft green
-	cWait   = lipgloss.Color("214") // orange
-	cIdle   = lipgloss.Color("245") // mid gray
-	cAccent = lipgloss.Color("75")  // sky blue
-	cDim    = lipgloss.Color("242")
-	cBorder = lipgloss.Color("238")
-	cText   = lipgloss.Color("252")
-	cSelBg  = lipgloss.Color("25") // deep blue selection bar
-	cSelFg  = lipgloss.Color("231")
-	cBadge  = lipgloss.Color("168") // pink unread badge
-	cBarBg  = lipgloss.Color("236") // titlebar background
-	cBarFg  = lipgloss.Color("252")
+	cBusy    = lipgloss.Color("46")  // matrix neon green
+	cWait    = lipgloss.Color("226") // electric yellow
+	cIdle    = lipgloss.Color("103") // steel violet (readable)
+	cAccent  = lipgloss.Color("51")  // neon cyan
+	cDim     = lipgloss.Color("244") // readable dim
+	cBorder  = lipgloss.Color("57")  // vivid purple border
+	cText    = lipgloss.Color("231")
+	cSelBg   = lipgloss.Color("54")  // deep magenta selection bar
+	cSelFg   = lipgloss.Color("231") // white
+	cBadge   = lipgloss.Color("201") // hot magenta unread badge
+	cBarBg   = lipgloss.Color("233") // dark titlebar
+	cBarFg   = lipgloss.Color("51")  // neon cyan
+	cPanelBg = lipgloss.Color("235") // slight dark panel fill
 )
 
 var (
-	sTitlebar   = lipgloss.NewStyle().Background(cBarBg).Foreground(cBarFg)
-	sTitleLeft  = sTitlebar.Bold(true)
-	sPanel      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cBorder)
-	sPanelTitle = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
-	sSubtle     = lipgloss.NewStyle().Foreground(cDim)
-	sValue      = lipgloss.NewStyle().Foreground(cText)
-	sAccent     = lipgloss.NewStyle().Foreground(cAccent)
-	sKey        = lipgloss.NewStyle().Foreground(cAccent).Bold(true)
+	sTitlebar   = lipgloss.NewStyle().Background(cBarBg).Foreground(cBarFg).Bold(true)
+	sTitleLeft  = sTitlebar.Foreground(cBadge)
+	sPanel      = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(cBorder).Background(cPanelBg)
+	sPanelTitle = lipgloss.NewStyle().Foreground(cAccent).Background(cPanelBg).Bold(true)
+	sSubtle     = lipgloss.NewStyle().Foreground(cDim).Background(cPanelBg)
+	sValue      = lipgloss.NewStyle().Foreground(cText).Background(cPanelBg)
+	sAccent     = lipgloss.NewStyle().Foreground(cAccent).Background(cPanelBg)
+	sKey        = lipgloss.NewStyle().Foreground(cBadge).Background(cPanelBg).Bold(true)
 	sSelected   = lipgloss.NewStyle().Background(cSelBg).Foreground(cSelFg).Bold(true)
 	sBadge      = lipgloss.NewStyle().Background(cBadge).Foreground(cSelFg).Bold(true)
 	sWarnBar    = lipgloss.NewStyle().Background(cBadge).Foreground(cSelFg).Bold(true)
-	sBusy       = lipgloss.NewStyle().Foreground(cBusy)
-	sWait       = lipgloss.NewStyle().Foreground(cWait)
-	sIdle       = lipgloss.NewStyle().Foreground(cIdle)
-	sSection    = lipgloss.NewStyle().Foreground(cBorder)
+	sBusy       = lipgloss.NewStyle().Foreground(cBusy).Background(cPanelBg)
+	sWait       = lipgloss.NewStyle().Foreground(cWait).Background(cPanelBg)
+	sIdle       = lipgloss.NewStyle().Foreground(cIdle).Background(cPanelBg)
+	sSection    = lipgloss.NewStyle().Foreground(cBorder).Background(cPanelBg)
 )
 
 func statusStyle(status string) lipgloss.Style {

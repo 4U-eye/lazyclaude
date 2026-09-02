@@ -21,6 +21,27 @@ func padANSI(s string, w int) string {
 	return s
 }
 
+// panelBgSGR is the raw SGR to re-apply the panel background. It must match
+// cPanelBg in theme.go. Kept as a string constant so we can splice it into
+// content without going through lipgloss (which always emits a full reset
+// at the end of each Render() call and would break the outer background).
+const panelBgSGR = "\x1b[48;5;235m"
+
+// padPanelLine truncates content to w columns, then re-applies the panel
+// background after every inner SGR reset so gaps between styled spans (and
+// the right-side padding) are filled instead of falling back to the
+// terminal's default background — which shows up as "holes" in the panel.
+func padPanelLine(s string, w int) string {
+	s = ansi.Truncate(s, w, "")
+	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+panelBgSGR)
+	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+panelBgSGR)
+	s = panelBgSGR + s
+	if gap := w - ansi.StringWidth(s); gap > 0 {
+		s += strings.Repeat(" ", gap)
+	}
+	return s + "\x1b[0m"
+}
+
 func (m Model) View() string {
 	if m.width < minWidth || m.height < minHeight {
 		return sWait.Render("画面が小さすぎます")
@@ -78,7 +99,8 @@ func (m Model) keybar(keys [][2]string) string {
 }
 
 // panel renders a rounded-border box of exactly w×h cells; the title sits on
-// the first content line. Every content line is ANSI-truncated to fit.
+// the first content line. Every content line is ANSI-truncated to fit and
+// wrapped with the panel background so gaps between styled spans are filled.
 func panel(title, subtitle string, lines []string, w, h int) string {
 	innerW, innerH := w-2, h-2
 	head := sPanelTitle.Render(" " + title + " ")
@@ -86,15 +108,15 @@ func panel(title, subtitle string, lines []string, w, h int) string {
 		head += sSubtle.Render(subtitle)
 	}
 	content := make([]string, 0, innerH)
-	content = append(content, padANSI(head, innerW))
+	content = append(content, padPanelLine(head, innerW))
 	for _, l := range lines {
 		if len(content) >= innerH {
 			break
 		}
-		content = append(content, padANSI(l, innerW)+"\x1b[m")
+		content = append(content, padPanelLine(l, innerW))
 	}
 	for len(content) < innerH {
-		content = append(content, strings.Repeat(" ", innerW))
+		content = append(content, padPanelLine("", innerW))
 	}
 	return sPanel.Render(strings.Join(content, "\n"))
 }
