@@ -123,14 +123,47 @@ func CreateSession(sessionName, cwd, command string) (paneID string, err error) 
 		}
 	}
 	paneID = strings.TrimSpace(out)
+	// .zshrc等のshell初期化が終わりpromptが出る前にsend-keysすると
+	// typeaheadが破棄されて claude が起動しないケースがあるため待つ
+	waitPaneReady(paneID, 3*time.Second)
 	if _, err := run("send-keys", "-t", paneID, "-l", command); err != nil {
 		return paneID, err
 	}
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
 	if _, err := run("send-keys", "-t", paneID, "Enter"); err != nil {
 		return paneID, err
 	}
 	return paneID, nil
+}
+
+// isInteractiveShell reports whether pane_current_command names a common
+// interactive shell (leading '-' from login shells is stripped).
+func isInteractiveShell(cmd string) bool {
+	switch strings.TrimPrefix(cmd, "-") {
+	case "zsh", "bash", "fish", "sh", "dash", "ksh":
+		return true
+	}
+	return false
+}
+
+// waitPaneReady polls pane_current_command until it names a shell twice in a
+// row (init subprocess like git/curl during .zshrc has settled), then adds a
+// short delay for prompt rendering. Falls back to sending after timeout.
+func waitPaneReady(paneID string, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	var prev string
+	for time.Now().Before(deadline) {
+		out, err := run("display-message", "-p", "-t", paneID, "#{pane_current_command}")
+		if err == nil {
+			cur := strings.TrimSpace(out)
+			if isInteractiveShell(cur) && cur == prev {
+				time.Sleep(200 * time.Millisecond)
+				return
+			}
+			prev = cur
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
 }
 
 // KillPane terminates the pane (and its process).
