@@ -30,7 +30,7 @@ const (
 )
 
 const (
-	tickInterval   = 500 * time.Millisecond
+	tickInterval   = 300 * time.Millisecond
 	noticeDuration = 4 * time.Second
 	paneCacheOK    = 10 * time.Second
 	paneCacheMiss  = 5 * time.Second
@@ -76,21 +76,27 @@ type Model struct {
 
 	paneCache map[int]paneEntry
 
+	tickPhase   int       // increments each tick; used for blinking accents
+	startedAt   time.Time // process start time, used for runtime clock in titlebar
+	splashUntil time.Time // NERV startup splash is shown until this instant
+
 	cfg config.Config
 }
 
 // New builds the initial model.
 func New() Model {
 	ti := textinput.New()
-	ti.Prompt = "❯ "
+	ti.Prompt = "▶ "
 	ti.CharLimit = 2000
 	return Model{
-		store:     claude.DefaultStore(),
-		seenPath:  claude.DefaultSeenPath(),
-		seen:      claude.LoadSeen(claude.DefaultSeenPath()),
-		input:     ti,
-		paneCache: map[int]paneEntry{},
-		cfg:       config.Load(),
+		store:       claude.DefaultStore(),
+		seenPath:    claude.DefaultSeenPath(),
+		seen:        claude.LoadSeen(claude.DefaultSeenPath()),
+		input:       ti,
+		paneCache:   map[int]paneEntry{},
+		startedAt:   time.Now(),
+		splashUntil: time.Now().Add(2500 * time.Millisecond),
+		cfg:         config.Load(),
 	}
 }
 
@@ -181,6 +187,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tickMsg:
+		m.tickPhase++
 		m.refresh()
 		m.capture()
 		return m, tick()
@@ -191,6 +198,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// splash中はどのキーでもスキップして main UI へ
+		if time.Now().Before(m.splashUntil) {
+			m.splashUntil = time.Now()
+			return m, nil
+		}
 		switch m.mode {
 		case modeInput:
 			return m.updateInput(msg)
@@ -239,7 +251,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		s := m.sessions[m.selected]
 		p := m.cachedPane(s.PID)
 		if p == nil {
-			m.setNotice("✗ このセッションはtmux外で動いています")
+			m.setNotice("✗ UNIT OFF-GRID")
 			break
 		}
 		m.mode = modeViewer
@@ -249,7 +261,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "n":
 		m.mode = modeInput
 		m.inputFor = inputNewDir
-		m.input.Placeholder = "作業dir (空=" + m.cfg.NewDir + ")"
+		m.input.Placeholder = "CWD (blank=" + m.cfg.NewDir + ")"
 		m.input.SetValue("")
 		m.input.Focus()
 	case "x":
@@ -262,7 +274,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			name = s.CWD
 		}
 		m.mode = modeConfirm
-		m.confirmMsg = "セッションを終了しますか? — " + name
+		m.confirmMsg = "TERMINATE UNIT? — " + name
 		m.confirmParam = s
 	}
 	return m, nil
@@ -275,7 +287,7 @@ func (m Model) updateViewer(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "i":
 		m.mode = modeInput
 		m.inputFor = inputInstruction
-		m.input.Placeholder = "指示を入力してEnterで送信"
+		m.input.Placeholder = "TRANSMIT MESSAGE · ENTER"
 		m.input.SetValue("")
 		m.input.Focus()
 	case "a":
@@ -318,7 +330,7 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.setNotice("✗ " + err.Error())
 				return m, nil
 			}
-			m.setNotice("✓ セッションを作成しました")
+			m.setNotice("✓ UNIT DEPLOYED")
 			tmux.SelectPane(paneID)
 			if tmux.InsideTmux() {
 				tmux.SwitchClient(paneID) //nolint:errcheck
@@ -333,9 +345,9 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if err := tmux.Send(m.viewerPane.ID, value); err != nil {
-				m.setNotice("✗ 送信に失敗しました")
+				m.setNotice("✗ TRANSMISSION FAILED")
 			} else {
-				m.setNotice("✓ 送信しました")
+				m.setNotice("✓ TRANSMITTED")
 			}
 			m.capture()
 		}
@@ -355,9 +367,9 @@ func (m Model) updateConfirm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			ok = proc.Signal(os.Interrupt) == nil
 		}
 		if ok {
-			m.setNotice("✓ 終了しました")
+			m.setNotice("✓ UNIT TERMINATED")
 		} else {
-			m.setNotice("✗ 終了に失敗しました")
+			m.setNotice("✗ TERMINATION FAILED")
 		}
 		delete(m.paneCache, m.confirmParam.PID)
 		time.Sleep(300 * time.Millisecond) // プロセス終了とレジストリ反映を待つ

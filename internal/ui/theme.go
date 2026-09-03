@@ -1,33 +1,51 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"strings"
 
-// Cyberpunk 256-color palette. lipgloss/termenv degrades gracefully on 8/16-color terminals.
-var (
-	cBusy    = lipgloss.Color("46")  // matrix neon green
-	cWait    = lipgloss.Color("226") // electric yellow
-	cIdle    = lipgloss.Color("103") // steel violet (readable)
-	cAccent  = lipgloss.Color("51")  // neon cyan
-	cDim     = lipgloss.Color("244") // readable dim
-	cBorder  = lipgloss.Color("57")  // vivid purple border
-	cText    = lipgloss.Color("231")
-	cSelBg   = lipgloss.Color("54")  // deep magenta selection bar
-	cSelFg   = lipgloss.Color("231") // white
-	cBadge   = lipgloss.Color("201") // hot magenta unread badge
-	cBarBg   = lipgloss.Color("233") // dark titlebar
-	cBarFg   = lipgloss.Color("51")  // neon cyan
-	cPanelBg = lipgloss.Color("235") // slight dark panel fill
+	"github.com/charmbracelet/lipgloss"
 )
+
+// Evangelion Unit-00 Kai palette (vivid blue body, white armor, red eye).
+// lipgloss/termenv degrades gracefully on 8/16-color terminals.
+var (
+	cBusy    = lipgloss.Color("33")  // vivid blue (Eva 00 Kai body — assertive)
+	cWait    = lipgloss.Color("196") // Eva red eye (attention)
+	cIdle    = lipgloss.Color("60")  // muted violet-gray
+	cAccent  = lipgloss.Color("45")  // bright cyan-blue HUD
+	cDim     = lipgloss.Color("247") // readable dim on navy
+	cBorder  = lipgloss.Color("33")  // vivid blue armor edge
+	cText    = lipgloss.Color("231") // white armor plate
+	cSelBg   = lipgloss.Color("19")  // navy selection (brighter than panel bg)
+	cSelFg   = lipgloss.Color("195") // pale cyan-white
+	cBadge   = lipgloss.Color("196") // Eva red eye (unread alert)
+	cBarBg   = lipgloss.Color("232") // near-black cockpit
+	cBarFg   = lipgloss.Color("45")  // bright cyan-blue label
+	cPanelBg = lipgloss.Color("234") // dark chassis (neutral, less assertive)
+)
+
+// evaBorder is a half-block HUD frame (thin edges + solid quadrant corners)
+// evocative of NERV tactical displays.
+var evaBorder = lipgloss.Border{
+	Top:         "▔",
+	Bottom:      "▁",
+	Left:        "▏",
+	Right:       "▕",
+	TopLeft:     "▛",
+	TopRight:    "▜",
+	BottomLeft:  "▙",
+	BottomRight: "▟",
+}
 
 var (
 	sTitlebar   = lipgloss.NewStyle().Background(cBarBg).Foreground(cBarFg).Bold(true)
 	sTitleLeft  = sTitlebar.Foreground(cBadge)
-	sPanel      = lipgloss.NewStyle().Border(lipgloss.DoubleBorder()).BorderForeground(cBorder).Background(cPanelBg)
+	sPanel      = lipgloss.NewStyle().Border(evaBorder).BorderForeground(cBorder).Background(cPanelBg)
 	sPanelTitle = lipgloss.NewStyle().Foreground(cAccent).Background(cPanelBg).Bold(true)
 	sSubtle     = lipgloss.NewStyle().Foreground(cDim).Background(cPanelBg)
 	sValue      = lipgloss.NewStyle().Foreground(cText).Background(cPanelBg)
 	sAccent     = lipgloss.NewStyle().Foreground(cAccent).Background(cPanelBg)
-	sKey        = lipgloss.NewStyle().Foreground(cBadge).Background(cPanelBg).Bold(true)
+	sKey        = lipgloss.NewStyle().Foreground(cAccent).Background(cPanelBg).Bold(true)
 	sSelected   = lipgloss.NewStyle().Background(cSelBg).Foreground(cSelFg).Bold(true)
 	sBadge      = lipgloss.NewStyle().Background(cBadge).Foreground(cSelFg).Bold(true)
 	sWarnBar    = lipgloss.NewStyle().Background(cBadge).Foreground(cSelFg).Bold(true)
@@ -51,12 +69,26 @@ func statusStyle(status string) lipgloss.Style {
 func statusIcon(status string) string {
 	switch status {
 	case "busy":
-		return "●"
+		return "◆"
 	case "waiting":
-		return "◐"
+		return "◈"
 	case "idle":
-		return "○"
+		return "◇"
 	default:
 		return "?"
+	}
+}
+
+// statusLabel renders the raw status string as an Eva-style HUD label.
+func statusLabel(status string) string {
+	switch status {
+	case "busy":
+		return "ACTIVE"
+	case "waiting":
+		return "HOLD"
+	case "idle":
+		return "STANDBY"
+	default:
+		return strings.ToUpper(status)
 	}
 }

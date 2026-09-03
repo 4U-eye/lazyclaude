@@ -111,10 +111,14 @@ func (st *Store) ScanTranscript(path string) Stats {
 
 // TailInfo is the most recent usage/model state near the end of a transcript.
 type TailInfo struct {
-	HasUsage      bool
-	ContextTokens int64 // latest input + cache_read + cache_creation (current context size)
-	Model         string
+	HasUsage       bool
+	ContextTokens  int64 // latest input + cache_read + cache_creation (current context size)
+	Model          string
+	ContextHistory []int64 // chronological context sizes from the tail window (up to tailHistoryCap samples)
 }
+
+// tailHistoryCap bounds how many recent context samples TailFromFile keeps.
+const tailHistoryCap = 40
 
 // DefaultTailBytes is how far back TailFromFile looks by default.
 const DefaultTailBytes = 256 * 1024
@@ -163,8 +167,13 @@ func TailFromFile(path string, maxBytes int64) TailInfo {
 		}
 		if u := rec.Message.Usage; u != nil {
 			info.HasUsage = true
-			info.ContextTokens = deref(u.InputTokens) +
+			ctx := deref(u.InputTokens) +
 				deref(u.CacheReadInputTokens) + deref(u.CacheCreationInputTokens)
+			info.ContextTokens = ctx
+			info.ContextHistory = append(info.ContextHistory, ctx)
+			if len(info.ContextHistory) > tailHistoryCap {
+				info.ContextHistory = info.ContextHistory[len(info.ContextHistory)-tailHistoryCap:]
+			}
 		}
 	}
 	return info
