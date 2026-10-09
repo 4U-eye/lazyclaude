@@ -4,11 +4,11 @@ A lazygit-style terminal UI for monitoring your local [Claude Code](https://clau
 
 ```
  lazyclaude                    9 sessions · 2 busy · 1 waiting · 3 unread   14:32
-╭─ Sessions · 3 unread ─────────────╮╭─ Sample refactoring session ─────────────╮
-│ ❯ ! ● Sample refactoring session  ││  ● busy · 2m ago                         │
-│     ◐ Fix flaky integration test  ││                                          │
-│     ○ Add dark mode support       ││  model    dummy-1 · v2.x.x               │
-│     ○ Write API documentation     ││  pane     work:3.1 · pid 12345           │
+╭─ Sessions · M3 E1 · 3 unread ─────╮╭─ Sample refactoring session ─────────────╮
+│ ❯ ! ● M-01 Sample refactoring ses ││  ● busy · 2m ago · [ MAX ]               │
+│     ◐ E-01 Fix flaky integration  ││                                          │
+│     ○ M-02 Add dark mode support  ││  model    dummy-1 · v2.x.x               │
+│     ○ M-03 Write API documentation││  pane     work:3.1 · pid 12345           │
 │                                   ││  dir      ~/projects/sample              │
 │                                   ││ ── Tokens ─────────────────────────────  │
 │                                   ││  context  240k                           │
@@ -24,6 +24,11 @@ A lazygit-style terminal UI for monitoring your local [Claude Code](https://clau
 
 - **Session dashboard**: status (`busy` / `waiting` / `idle`), model, age,
   and token usage (current context size, cumulative in/out/cache, total)
+- **Multiple installations**: Claude Code stores its state under
+  `CLAUDE_CONFIG_DIR`, so a personal plan and an enterprise one can live side
+  by side. lazyclaude scans every configured installation and colours each
+  one distinctly — unit codes (`M-01` / `E-01`), a plan pill in the detail
+  pane, and a per-plan count in the panel subtitle
 - **Live terminal preview**: the detail pane shows the selected session's
   actual terminal, in color, refreshed twice a second
 - **Fullscreen viewer** (`enter`): watch a session up close, **send it
@@ -31,7 +36,8 @@ A lazygit-style terminal UI for monitoring your local [Claude Code](https://clau
 - **Unread tracking** (`!` badge): sessions that produced output since you
   last opened them; persisted across restarts
 - **Session lifecycle**: create a new Claude Code session in any directory
-  (`n`) or kill one (`x`) without leaving the dashboard
+  (`n`, picking which plan to launch it in) or kill one (`x`) without leaving
+  the dashboard
 
 ## Install
 
@@ -56,7 +62,7 @@ lazyclaude --list   # plain-text session listing (for scripts)
 | `enter` | open fullscreen viewer for the selected session |
 | `i` (viewer) | type an instruction and send it to the session |
 | `a` (viewer) | jump to the session's tmux pane |
-| `n` | create a new Claude Code session (prompts for directory) |
+| `n` | create a new Claude Code session (picks the plan when more than one installation is configured, then prompts for directory) |
 | `x` | kill the selected session (with confirmation) |
 | `g` / `G` | first / last |
 | `r` | refresh now |
@@ -74,7 +80,7 @@ new_dir = "~/projects"
 # tmux session that hosts new sessions (default: claude)
 claude_session = "claude"
 
-# command typed into the new pane; runs via your shell, so aliases apply
+# launch command for the first profile when it doesn't set one of its own
 claude_command = "claude"
 ```
 
@@ -84,19 +90,50 @@ claude_command = "claude"
 | `claude_session` | `LAZYCLAUDE_CLAUDE_SESSION` | `claude` |
 | `claude_command` | `LAZYCLAUDE_CLAUDE_COMMAND` | `claude` |
 
+#### Profiles (installations / plans)
+
+By default lazyclaude watches two installations: `~/.claude` (labelled `MAX`,
+cyan) and `~/.claude-enterprise` (labelled `ENT`, orange). A profile whose
+directory doesn't exist is simply skipped, so the defaults are safe even with
+only one installation.
+
+Declaring any `[[profiles]]` replaces both defaults:
+
+```toml
+[[profiles]]
+key = "max"              # stable id; defaults to the lowercased label
+label = "MAX"            # shown in the UI; its first letter becomes the unit code prefix
+config_dir = "~/.claude" # the installation's CLAUDE_CONFIG_DIR
+command = "claude"       # typed into the new pane via your shell, so aliases apply
+tmux_session = "claude"  # defaults to claude_session
+color = "45"             # 256-color index or hex; drives the code and pill colour
+
+[[profiles]]
+key = "ent"
+label = "ENT"
+config_dir = "~/.claude-enterprise"
+command = "claude-e"
+color = "208"
+```
+
+Order matters: it is the display order, and the number keys in the `n` picker.
+
 ## How it works
 
-Claude Code keeps a live session registry and per-session transcripts on disk:
+Claude Code keeps a live session registry and per-session transcripts on disk,
+under `CLAUDE_CONFIG_DIR` (`~/.claude` unless overridden):
 
 | Path | Contents |
 |------|----------|
-| `~/.claude/sessions/{pid}.json` | live registry: pid, status, cwd, updatedAt |
-| `~/.claude/projects/{escaped-cwd}/{sessionId}.jsonl` | transcript: messages, token usage, session title |
+| `{config_dir}/sessions/{pid}.json` | live registry: pid, status, cwd, updatedAt |
+| `{config_dir}/projects/{escaped-cwd}/{sessionId}.jsonl` | transcript: messages, token usage, session title |
 
-lazyclaude reads these (read-only), filters out dead processes, and aggregates
-token usage. Sessions are matched to tmux panes by tty, which powers the live
-preview (`capture-pane -e`), instruction sending (`send-keys`), and jumping.
-Read/unread state lives in `~/.local/state/lazyclaude/seen.json`.
+lazyclaude reads these (read-only) for every configured profile, filters out
+dead processes, and aggregates token usage into one list. Sessions are matched
+to tmux panes by tty — independent of which installation they came from — which
+powers the live preview (`capture-pane -e`), instruction sending (`send-keys`),
+and jumping. Read/unread state lives in `~/.local/state/lazyclaude/seen.json`,
+keyed by session id, so it is shared across installations.
 
 > Note: the registry and transcript formats are undocumented internals of
 > Claude Code and may change with future releases. Parsing is intentionally

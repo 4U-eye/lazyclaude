@@ -27,15 +27,26 @@ func padANSI(s string, w int) string {
 // at the end of each Render() call and would break the outer background).
 const panelBgSGR = "\x1b[48;5;234m"
 
+// selSGR is the raw SGR for a selected row; it must match sSelected in
+// theme.go (bold cSelFg on cSelBg). Needed for the same reason as panelBgSGR:
+// a nested Render() ends with a full reset, which would drop the row's
+// highlight for everything after it.
+const selSGR = "\x1b[1;38;5;195;48;5;19m"
+
+// keepSGR prefixes s with sgr and re-applies it after every inner SGR reset,
+// so styled spans nested inside s don't cancel the surrounding style.
+func keepSGR(s, sgr string) string {
+	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+sgr)
+	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+sgr)
+	return sgr + s
+}
+
 // padPanelLine truncates content to w columns, then re-applies the panel
 // background after every inner SGR reset so gaps between styled spans (and
 // the right-side padding) are filled instead of falling back to the
 // terminal's default background — which shows up as "holes" in the panel.
 func padPanelLine(s string, w int) string {
-	s = ansi.Truncate(s, w, "")
-	s = strings.ReplaceAll(s, "\x1b[0m", "\x1b[0m"+panelBgSGR)
-	s = strings.ReplaceAll(s, "\x1b[m", "\x1b[m"+panelBgSGR)
-	s = panelBgSGR + s
+	s = keepSGR(ansi.Truncate(s, w, ""), panelBgSGR)
 	if gap := w - ansi.StringWidth(s); gap > 0 {
 		s += strings.Repeat(" ", gap)
 	}
@@ -63,6 +74,8 @@ func (m Model) View() string {
 		bottom = sTitlebar.Width(m.width).Render(m.input.View())
 	case modeConfirm:
 		bottom = sWarnBar.Width(m.width).Render(" ▚▞ ⚠ " + m.confirmMsg + "  [y/N] ⚠ ▞▚")
+	case modeProfile:
+		bottom = m.profileBar()
 	case modeViewer:
 		bottom = m.keybar([][2]string{{"i", "TRANSMIT"}, {"a", "JUMP"}, {"q", "BACK"}})
 	default:
@@ -101,6 +114,19 @@ func (m Model) keybar(keys [][2]string) string {
 	return padANSI(bar, m.width)
 }
 
+// profileBar is the plan picker shown before spawning a session: one numbered
+// pill per configured installation, each in that profile's accent.
+func (m Model) profileBar() string {
+	parts := make([]string, 0, len(m.cfg.Profiles))
+	for i, p := range m.cfg.Profiles {
+		parts = append(parts, sKey.Render(fmt.Sprintf("[%d]", i+1))+" "+
+			m.theme(p.Key).pill.Render(" "+p.Label+" "))
+	}
+	bar := " " + sAccent.Bold(true).Render("▚▞ SPAWN UNIT") + " " +
+		strings.Join(parts, sSection.Render(" · ")) + "  " + sSubtle.Render("esc CANCEL")
+	return padANSI(bar, m.width)
+}
+
 // panel renders a rounded-border box of exactly w×h cells; the title sits on
 // the first content line. Every content line is ANSI-truncated to fit and
 // wrapped with the panel background so gaps between styled spans are filled.
@@ -130,7 +156,7 @@ func renderPanel(style lipgloss.Style, title, subtitle string, lines []string, w
 }
 
 func sectionLine(title, subtitle string, w int) string {
-	label := sAccent.Bold(true).Render("▍ [ "+title+" ]")
+	label := sAccent.Bold(true).Render("▍ [ " + title + " ]")
 	if subtitle != "" {
 		label += sSubtle.Render(" " + subtitle)
 	}
@@ -265,14 +291,26 @@ func (m Model) viewListBody() string {
 func (m Model) viewSessionsPanel(w, h int) string {
 	innerW := w - 2
 	unread := 0
+	perProfile := map[string]int{}
 	for _, s := range m.sessions {
 		if m.seen.IsUnread(s) {
 			unread++
 		}
+		perProfile[s.Profile]++
+	}
+	// 内訳（M3 E2）を出して、どのプランに何本いるかを一目で示す
+	var breakdown []string
+	for _, p := range m.cfg.Profiles {
+		if n := perProfile[p.Key]; n > 0 {
+			breakdown = append(breakdown, fmt.Sprintf("%s%d", m.theme(p.Key).Prefix, n))
+		}
 	}
 	subtitle := ""
+	if len(breakdown) > 0 {
+		subtitle = "· " + strings.Join(breakdown, " ") + " "
+	}
 	if unread > 0 {
-		subtitle = fmt.Sprintf("· %d ALERT ", unread)
+		subtitle += fmt.Sprintf("· %d ALERT ", unread)
 	}
 
 	if len(m.sessions) == 0 {
@@ -285,13 +323,16 @@ func (m Model) viewSessionsPanel(w, h int) string {
 	}
 
 	lines := make([]string, 0, len(m.sessions))
+	seq := map[string]int{} // プロファイルごとの通し番号
 	for i, s := range m.sessions {
 		stats := m.store.ScanTranscript(s.Transcript)
 		name := stats.Title
 		if name == "" {
 			name = format.ShortCWD(s.CWD, 40)
 		}
-		code := fmt.Sprintf("U-%02d", i+1)
+		theme := m.theme(s.Profile)
+		seq[s.Profile]++
+		code := fmt.Sprintf("%s-%02d", theme.Prefix, seq[s.Profile])
 		meta := format.Tokens(stats.Total()) + " · " + format.Age(s.UpdatedAt)
 		isUnread := m.seen.IsUnread(s)
 		nameW := innerW - 14 - ansi.StringWidth(meta)
@@ -324,10 +365,10 @@ func (m Model) viewSessionsPanel(w, h int) string {
 		}
 
 		if i == m.selected {
-			// 選択行: sSelected bg で全体を囲む（左バーは外側で色を保持）
-			innerRow := fmt.Sprintf(" %s %s %s %s %s", badge, code, icon,
+			// 選択行: 行全体を選択スタイルで塗り、コードだけプラン色を残す
+			innerRow := fmt.Sprintf(" %s %s %s %s %s", badge, theme.codeSel.Render(code), icon,
 				padANSI(name, nameW), meta)
-			lines = append(lines, leftBar+sSelected.Render(padANSI(innerRow, innerW-2)))
+			lines = append(lines, leftBar+keepSGR(padANSI(innerRow, innerW-2), selSGR))
 			continue
 		}
 		nameStyle := sValue
@@ -337,7 +378,7 @@ func (m Model) viewSessionsPanel(w, h int) string {
 			nameStyle = sIdle
 		}
 		lines = append(lines, fmt.Sprintf("%s %s %s %s %s %s", leftBar, badge,
-			sAccent.Render(code),
+			theme.code.Render(code),
 			iconStyle.Render(icon),
 			nameStyle.Render(padANSI(name, nameW)), sSubtle.Render(meta)))
 	}
@@ -370,8 +411,10 @@ func (m Model) viewDetailPanel(w, h int) string {
 		ctx = format.Tokens(tail.ContextTokens)
 	}
 
+	theme := m.theme(s.Profile)
 	statPill := sSelected.Render(" " + statusIcon(s.Status) + " " + statusLabel(s.Status) + " ")
 	agePill := sSelected.Render(" " + format.Age(s.UpdatedAt) + " ago ")
+	planPill := theme.pill.Render(" " + theme.Label + " ")
 	syncVal := ctx
 	if tail.HasUsage {
 		syncVal = syncMeter(tail.ContextTokens, 10) + "  " + sValue.Render(ctx)
@@ -384,7 +427,7 @@ func (m Model) viewDetailPanel(w, h int) string {
 	trendVal := sparkline(tail.ContextHistory, 20)
 
 	lines := []string{
-		"  " + statPill + "  " + agePill,
+		"  " + statPill + "  " + agePill + "  " + planPill,
 		"",
 		field("MDL", format.ShortModel(tail.Model)+" · v"+s.Version),
 		field("TTY", fmt.Sprintf("%s · pid %d", paneName, s.PID)),

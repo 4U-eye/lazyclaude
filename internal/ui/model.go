@@ -20,6 +20,7 @@ const (
 	modeViewer
 	modeInput
 	modeConfirm
+	modeProfile // choosing which installation (plan) to spawn a session in
 )
 
 type inputPurpose int
@@ -71,6 +72,9 @@ type Model struct {
 	confirmMsg   string
 	confirmParam claude.Session
 
+	// spawnProfile indexes cfg.Profiles for the session about to be created
+	spawnProfile int
+
 	notice      string
 	noticeUntil time.Time
 
@@ -80,7 +84,9 @@ type Model struct {
 	startedAt   time.Time // process start time, used for runtime clock in titlebar
 	splashUntil time.Time // NERV startup splash is shown until this instant
 
-	cfg config.Config
+	cfg      config.Config
+	themes   map[string]profileTheme // keyed by profile key
+	fallback profileTheme            // used for sessions from an unconfigured dir
 }
 
 // New builds the initial model.
@@ -88,16 +94,31 @@ func New() Model {
 	ti := textinput.New()
 	ti.Prompt = "▶ "
 	ti.CharLimit = 2000
+	cfg := config.Load()
+	themes := make(map[string]profileTheme, len(cfg.Profiles))
+	for _, p := range cfg.Profiles {
+		themes[p.Key] = newProfileTheme(p.Label, p.Color)
+	}
 	return Model{
-		store:       claude.DefaultStore(),
+		store:       &claude.Store{Profiles: cfg.ClaudeProfiles()},
 		seenPath:    claude.DefaultSeenPath(),
 		seen:        claude.LoadSeen(claude.DefaultSeenPath()),
 		input:       ti,
 		paneCache:   map[int]paneEntry{},
 		startedAt:   time.Now(),
 		splashUntil: time.Now().Add(2500 * time.Millisecond),
-		cfg:         config.Load(),
+		cfg:         cfg,
+		themes:      themes,
+		fallback:    newProfileTheme("?", "247"),
 	}
+}
+
+// theme returns the styles for a session's profile.
+func (m Model) theme(key string) profileTheme {
+	if t, ok := m.themes[key]; ok {
+		return t
+	}
+	return m.fallback
 }
 
 type tickMsg time.Time
@@ -208,6 +229,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateInput(msg)
 		case modeConfirm:
 			return m.updateConfirm(msg)
+		case modeProfile:
+			return m.updateProfile(msg)
 		case modeViewer:
 			return m.updateViewer(msg)
 		default:
@@ -259,11 +282,13 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.viewerPane = p
 		m.capture()
 	case "n":
-		m.mode = modeInput
-		m.inputFor = inputNewDir
-		m.input.Placeholder = "CWD (blank=" + m.cfg.NewDir + ")"
-		m.input.SetValue("")
-		m.input.Focus()
+		// 複数インストールがある場合はどのプランで起動するか先に選ばせる
+		if len(m.cfg.Profiles) > 1 {
+			m.mode = modeProfile
+			break
+		}
+		m.spawnProfile = 0
+		m.beginNewDirInput()
 	case "x":
 		if len(m.sessions) == 0 {
 			break
@@ -276,6 +301,43 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.mode = modeConfirm
 		m.confirmMsg = "TERMINATE UNIT? — " + name
 		m.confirmParam = s
+	}
+	return m, nil
+}
+
+// beginNewDirInput opens the cwd prompt for the already-chosen profile.
+func (m *Model) beginNewDirInput() {
+	m.mode = modeInput
+	m.inputFor = inputNewDir
+	label := ""
+	if p, ok := m.spawnProfileConfig(); ok {
+		label = p.Label + " · "
+	}
+	m.input.Placeholder = label + "CWD (blank=" + m.cfg.NewDir + ")"
+	m.input.SetValue("")
+	m.input.Focus()
+}
+
+// spawnProfileConfig returns the profile a new session will be created in.
+func (m Model) spawnProfileConfig() (config.Profile, bool) {
+	if m.spawnProfile < 0 || m.spawnProfile >= len(m.cfg.Profiles) {
+		return config.Profile{}, false
+	}
+	return m.cfg.Profiles[m.spawnProfile], true
+}
+
+// updateProfile handles the plan picker shown before creating a session.
+func (m Model) updateProfile(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	key := msg.String()
+	if key == "esc" || key == "q" || key == "ctrl+c" {
+		m.mode = modeList
+		return m, nil
+	}
+	if len(key) == 1 && key[0] >= '1' && key[0] <= '9' {
+		if idx := int(key[0] - '1'); idx < len(m.cfg.Profiles) {
+			m.spawnProfile = idx
+			m.beginNewDirInput()
+		}
 	}
 	return m, nil
 }
@@ -325,12 +387,16 @@ func (m Model) updateInput(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if dir == "" {
 				dir = m.cfg.NewDir
 			}
-			paneID, err := tmux.CreateSession(m.cfg.ClaudeSession, dir, m.cfg.ClaudeCommand)
+			tmuxSession, command, label := m.cfg.ClaudeSession, m.cfg.ClaudeCommand, ""
+			if p, ok := m.spawnProfileConfig(); ok {
+				tmuxSession, command, label = p.TmuxSession, p.Command, " · "+p.Label
+			}
+			paneID, err := tmux.CreateSession(tmuxSession, dir, command)
 			if err != nil {
 				m.setNotice("✗ " + err.Error())
 				return m, nil
 			}
-			m.setNotice("✓ UNIT DEPLOYED")
+			m.setNotice("✓ UNIT DEPLOYED" + label)
 			tmux.SelectPane(paneID)
 			if tmux.InsideTmux() {
 				tmux.SwitchClient(paneID) //nolint:errcheck

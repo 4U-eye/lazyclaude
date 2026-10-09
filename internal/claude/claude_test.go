@@ -19,13 +19,10 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
-func newTestStore(t *testing.T) *Store {
+func newTestStore(t *testing.T) (*Store, Profile) {
 	t.Helper()
-	dir := t.TempDir()
-	return &Store{
-		SessionsDir: filepath.Join(dir, "sessions"),
-		ProjectsDir: filepath.Join(dir, "projects"),
-	}
+	p := NewProfile("test", t.TempDir())
+	return &Store{Profiles: []Profile{p}}, p
 }
 
 func registryJSON(pid int, sid, cwd, status string, updatedAt int64) string {
@@ -37,19 +34,19 @@ func registryJSON(pid int, sid, cwd, status string, updatedAt int64) string {
 }
 
 func TestLoadFiltersDeadAndSorts(t *testing.T) {
-	st := newTestStore(t)
+	st, p := newTestStore(t)
 	alive := os.Getpid()
 	const dead = 999_999_999 // まず存在しないpid
 
-	writeFile(t, filepath.Join(st.SessionsDir, "1.json"),
+	writeFile(t, filepath.Join(p.SessionsDir, "1.json"),
 		registryJSON(alive, "sid-idle", "/tmp/proj-a", "idle", 100))
-	writeFile(t, filepath.Join(st.SessionsDir, "2.json"),
+	writeFile(t, filepath.Join(p.SessionsDir, "2.json"),
 		registryJSON(alive, "sid-busy", "/tmp/proj-b", "busy", 50))
-	writeFile(t, filepath.Join(st.SessionsDir, "3.json"),
+	writeFile(t, filepath.Join(p.SessionsDir, "3.json"),
 		registryJSON(dead, "sid-dead", "/tmp/proj-c", "busy", 999))
-	writeFile(t, filepath.Join(st.SessionsDir, "4.json"),
+	writeFile(t, filepath.Join(p.SessionsDir, "4.json"),
 		registryJSON(alive, "sid-wait", "/tmp/proj-d", "waiting", 10))
-	writeFile(t, filepath.Join(st.SessionsDir, "broken.json"), "{not json")
+	writeFile(t, filepath.Join(p.SessionsDir, "broken.json"), "{not json")
 
 	got := st.Load()
 	if len(got) != 3 {
@@ -63,9 +60,56 @@ func TestLoadFiltersDeadAndSorts(t *testing.T) {
 		}
 	}
 	// transcriptパス: cwdの非英数字が-に変換される
-	wantPath := filepath.Join(st.ProjectsDir, "-tmp-proj-b", "sid-busy.jsonl")
+	wantPath := filepath.Join(p.ProjectsDir, "-tmp-proj-b", "sid-busy.jsonl")
 	if got[0].Transcript != wantPath {
 		t.Errorf("transcript = %q, want %q", got[0].Transcript, wantPath)
+	}
+	if got[0].Profile != "test" {
+		t.Errorf("profile = %q, want %q", got[0].Profile, "test")
+	}
+}
+
+// 別々の CLAUDE_CONFIG_DIR に置かれたセッションが1つの一覧にまとまり、
+// それぞれ自分のプロファイルの transcript ディレクトリを指すこと。
+func TestLoadMergesProfiles(t *testing.T) {
+	maxP := NewProfile("max", t.TempDir())
+	entP := NewProfile("ent", t.TempDir())
+	st := &Store{Profiles: []Profile{maxP, entP}}
+	alive := os.Getpid()
+
+	writeFile(t, filepath.Join(maxP.SessionsDir, "1.json"),
+		registryJSON(alive, "sid-max", "/tmp/proj-a", "idle", 100))
+	writeFile(t, filepath.Join(entP.SessionsDir, "2.json"),
+		registryJSON(alive, "sid-ent", "/tmp/proj-b", "busy", 50))
+
+	got := st.Load()
+	if len(got) != 2 {
+		t.Fatalf("want 2 sessions, got %d", len(got))
+	}
+	// busy が先。プロファイル横断でソートされる
+	if got[0].SessionID != "sid-ent" || got[0].Profile != "ent" {
+		t.Fatalf("first = %+v, want sid-ent from ent", got[0])
+	}
+	if want := filepath.Join(entP.ProjectsDir, "-tmp-proj-b", "sid-ent.jsonl"); got[0].Transcript != want {
+		t.Errorf("transcript = %q, want %q", got[0].Transcript, want)
+	}
+	if got[1].SessionID != "sid-max" || got[1].Profile != "max" {
+		t.Errorf("second = %+v, want sid-max from max", got[1])
+	}
+}
+
+// 存在しない config dir のプロファイルは、他のプロファイルを壊さず無視される。
+func TestLoadSkipsMissingProfileDir(t *testing.T) {
+	present := NewProfile("max", t.TempDir())
+	st := &Store{Profiles: []Profile{
+		present,
+		NewProfile("ent", filepath.Join(t.TempDir(), "no-such-install")),
+	}}
+	writeFile(t, filepath.Join(present.SessionsDir, "1.json"),
+		registryJSON(os.Getpid(), "sid-max", "/tmp/proj-a", "idle", 100))
+
+	if got := st.Load(); len(got) != 1 || got[0].SessionID != "sid-max" {
+		t.Fatalf("got %+v, want only sid-max", got)
 	}
 }
 
@@ -76,7 +120,7 @@ func usageLine(in, out, cacheW, cacheR int64) string {
 }
 
 func TestScanTranscript(t *testing.T) {
-	st := newTestStore(t)
+	st, _ := newTestStore(t)
 	path := filepath.Join(t.TempDir(), "sample.jsonl")
 	writeFile(t, path, ""+
 		`{"type":"ai-title","aiTitle":"Old title"}`+"\n"+
@@ -118,7 +162,7 @@ func TestScanTranscript(t *testing.T) {
 }
 
 func TestScanTranscriptMissing(t *testing.T) {
-	st := newTestStore(t)
+	st, _ := newTestStore(t)
 	if got := st.ScanTranscript("/no/such/file.jsonl"); got != (Stats{}) {
 		t.Errorf("missing file should yield zero stats, got %+v", got)
 	}

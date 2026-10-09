@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/4U-eye/lazyclaude/internal/claude"
+	"github.com/4U-eye/lazyclaude/internal/config"
 	"github.com/4U-eye/lazyclaude/internal/format"
 	"github.com/4U-eye/lazyclaude/internal/ui"
 )
@@ -29,7 +30,12 @@ func main() {
 }
 
 func runList() {
-	st := claude.DefaultStore()
+	cfg := config.Load()
+	labels := map[string]string{}
+	for _, p := range cfg.Profiles {
+		labels[p.Key] = p.Label
+	}
+	st := &claude.Store{Profiles: cfg.ClaudeProfiles()}
 	sessions := st.Load()
 	if len(sessions) == 0 {
 		fmt.Println("no running Claude Code sessions")
@@ -37,8 +43,8 @@ func runList() {
 	}
 	seen := claude.LoadSeen(claude.DefaultSeenPath())
 
-	fmt.Printf("%-2s%6s  %-8s%-10s%6s  %6s  %7s  %4s  %-22s  %s\n",
-		"U", "PID", "STATUS", "MODEL", "CTX", "OUT", "TOTAL", "AGE", "CWD", "NAME")
+	fmt.Printf("%-2s%-5s%6s  %-8s%-10s%6s  %6s  %7s  %4s  %-22s  %s\n",
+		"U", "PLAN", "PID", "STATUS", "MODEL", "CTX", "OUT", "TOTAL", "AGE", "CWD", "NAME")
 	for _, s := range sessions {
 		tail := claude.TailFromFile(s.Transcript, 64*1024)
 		stats := st.ScanTranscript(s.Transcript)
@@ -59,8 +65,12 @@ func runList() {
 		if name == "" {
 			name = "-"
 		}
-		fmt.Printf("%-2s%6d  %-8s%-10s%6s  %6s  %7s  %4s  %-22s  %s\n",
-			unread, s.PID, status, format.ShortModel(tail.Model),
+		plan := labels[s.Profile]
+		if plan == "" {
+			plan = "-"
+		}
+		fmt.Printf("%-2s%-5s%6d  %-8s%-10s%6s  %6s  %7s  %4s  %-22s  %s\n",
+			unread, plan, s.PID, status, format.ShortModel(tail.Model),
 			ctx, format.Tokens(stats.Output), format.Tokens(stats.Total()),
 			format.Age(s.UpdatedAt), format.ShortCWD(s.CWD, 22), name)
 	}
