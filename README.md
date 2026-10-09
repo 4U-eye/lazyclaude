@@ -63,6 +63,7 @@ lazyclaude --list   # plain-text session listing (for scripts)
 | `i` (viewer) | type an instruction and send it to the session |
 | `a` (viewer) | jump to the session's tmux pane |
 | `n` | create a new Claude Code session (picks the plan when more than one installation is configured, then prompts for directory) |
+| `A` | jump to the assistant session, launching it first when it is not running (needs `[assistant]` in the config) |
 | `x` | kill the selected session (with confirmation) |
 | `g` / `G` | first / last |
 | `r` | refresh now |
@@ -117,6 +118,21 @@ color = "208"
 ```
 
 Order matters: it is the display order, and the number keys in the `n` picker.
+
+#### Assistant session
+
+A resident session you can reach with one key. `A` looks for a live session
+whose name (set by `--name`) matches `name` and jumps to it; when there is
+none, it launches `{profile command} {args} --name {name}` in `dir` and jumps
+there. The key is disabled until `name` is set.
+
+```toml
+[assistant]
+name = "assistant"           # session name to look for / launch with
+dir = "~/work"               # default: new_dir
+profile = "max"              # profile key to launch in; default: the first profile
+args = "--agent assistant"   # e.g. run a custom agent as the main thread
+```
 
 ## How it works
 

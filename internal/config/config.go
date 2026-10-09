@@ -46,6 +46,57 @@ type Config struct {
 	ClaudeCommand string `toml:"claude_command"`
 	// Profiles are the installations to monitor, in display order.
 	Profiles []Profile `toml:"profiles"`
+	// Assistant is the resident session reachable with one key (A).
+	Assistant Assistant `toml:"assistant"`
+}
+
+// Assistant describes a long-lived session that the A key jumps to, launching
+// it first when it is not running. The feature is off while Name is empty.
+type Assistant struct {
+	// Name is matched against the registry's session name and passed to
+	// Claude Code as --name, so the running session can be found again.
+	Name string `toml:"name"`
+	// Dir is the working directory to launch in; empty falls back to NewDir.
+	Dir string `toml:"dir"`
+	// Profile is the key of the installation to launch in; empty means the
+	// first profile.
+	Profile string `toml:"profile"`
+	// Args are appended to the profile's command (e.g. "--agent assistant").
+	Args string `toml:"args"`
+}
+
+// Enabled reports whether the assistant key is configured.
+func (a Assistant) Enabled() bool { return a.Name != "" }
+
+// AssistantLaunch resolves the profile, directory and command used to start
+// the assistant session.
+func (c Config) AssistantLaunch() (Profile, string, string) {
+	p := Profile{Command: c.ClaudeCommand, TmuxSession: c.ClaudeSession}
+	if len(c.Profiles) > 0 {
+		p = c.Profiles[0]
+	}
+	for _, cand := range c.Profiles {
+		if cand.Key == c.Assistant.Profile {
+			p = cand
+			break
+		}
+	}
+	dir := c.Assistant.Dir
+	if dir == "" {
+		dir = c.NewDir
+	}
+	command := p.Command
+	if c.Assistant.Args != "" {
+		command += " " + c.Assistant.Args
+	}
+	command += " --name " + shellQuote(c.Assistant.Name)
+	return p, dir, command
+}
+
+// shellQuote wraps s in single quotes for the interactive shell the command is
+// typed into.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // Default returns the built-in settings: the stock ~/.claude installation plus
@@ -97,6 +148,7 @@ func loadFrom(path string) Config {
 		if len(file.Profiles) > 0 {
 			cfg.Profiles = file.Profiles
 		}
+		cfg.Assistant = file.Assistant
 	}
 	applyEnv(&cfg)
 	normalizeProfiles(&cfg)

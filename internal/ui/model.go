@@ -289,6 +289,12 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.spawnProfile = 0
 		m.beginNewDirInput()
+	case "A":
+		if !m.cfg.Assistant.Enabled() {
+			m.setNotice("✗ NO ASSISTANT CONFIGURED")
+			break
+		}
+		return m.openAssistant()
 	case "x":
 		if len(m.sessions) == 0 {
 			break
@@ -303,6 +309,44 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.confirmParam = s
 	}
 	return m, nil
+}
+
+// openAssistant jumps to the running assistant session, launching it first
+// when no live session carries the configured name.
+func (m Model) openAssistant() (tea.Model, tea.Cmd) {
+	for _, s := range m.sessions {
+		if s.Name != m.cfg.Assistant.Name {
+			continue
+		}
+		p := m.cachedPane(s.PID)
+		if p == nil {
+			m.setNotice("✗ ASSISTANT OFF-GRID")
+			return m, nil
+		}
+		m.viewerSession = s
+		return m, m.jumpTo(p.ID)
+	}
+	profile, dir, command := m.cfg.AssistantLaunch()
+	paneID, err := tmux.CreateSession(profile.TmuxSession, dir, command)
+	if err != nil {
+		m.setNotice("✗ " + err.Error())
+		return m, nil
+	}
+	m.setNotice("✓ ASSISTANT DEPLOYED · " + profile.Label)
+	return m, m.jumpTo(paneID)
+}
+
+// jumpTo focuses the pane: switching the client when lazyclaude runs inside
+// tmux, otherwise attaching with the terminal released.
+func (m Model) jumpTo(paneID string) tea.Cmd {
+	tmux.SelectPane(paneID)
+	if tmux.InsideTmux() {
+		tmux.SwitchClient(paneID) //nolint:errcheck
+		return nil
+	}
+	return tea.ExecProcess(tmux.AttachCmd(paneID), func(error) tea.Msg {
+		return attachDoneMsg{}
+	})
 }
 
 // beginNewDirInput opens the cwd prompt for the already-chosen profile.

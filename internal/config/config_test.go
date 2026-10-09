@@ -155,3 +155,46 @@ func TestPathHonorsXDG(t *testing.T) {
 		t.Errorf("Path() = %q", got)
 	}
 }
+
+func TestAssistantDisabledByDefault(t *testing.T) {
+	clearEnv(t)
+	cfg := loadFrom(filepath.Join(t.TempDir(), "nope.toml"))
+	if cfg.Assistant.Enabled() {
+		t.Errorf("assistant should be off without config, got %+v", cfg.Assistant)
+	}
+}
+
+func TestAssistantLaunch(t *testing.T) {
+	clearEnv(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	os.WriteFile(path, []byte(`new_dir = "~/projects"
+[assistant]
+name = "assistant"
+profile = "ent"
+args = "--agent assistant"
+`), 0o644)
+
+	cfg := loadFrom(path)
+	p, dir, command := cfg.AssistantLaunch()
+	if p.Key != "ent" {
+		t.Errorf("profile = %q, want ent", p.Key)
+	}
+	// dir 未指定なら new_dir を使う
+	if dir != "~/projects" {
+		t.Errorf("dir = %q, want ~/projects", dir)
+	}
+	if want := "claude-e --agent assistant --name 'assistant'"; command != want {
+		t.Errorf("command = %q, want %q", command, want)
+	}
+}
+
+func TestAssistantUnknownProfileFallsBackToFirst(t *testing.T) {
+	clearEnv(t)
+	path := filepath.Join(t.TempDir(), "config.toml")
+	os.WriteFile(path, []byte("[assistant]\nname = \"a b\"\nprofile = \"nope\"\ndir = \"~/w\"\n"), 0o644)
+
+	p, dir, command := loadFrom(path).AssistantLaunch()
+	if p.Key != "max" || dir != "~/w" || command != "claude --name 'a b'" {
+		t.Errorf("got %q %q %q", p.Key, dir, command)
+	}
+}

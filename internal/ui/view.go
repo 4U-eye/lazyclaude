@@ -79,9 +79,12 @@ func (m Model) View() string {
 	case modeViewer:
 		bottom = m.keybar([][2]string{{"i", "TRANSMIT"}, {"a", "JUMP"}, {"q", "BACK"}})
 	default:
-		bottom = m.keybar([][2]string{
-			{"j/k", "SCAN"}, {"enter", "LINK"}, {"n", "SPAWN"},
-			{"x", "ABORT"}, {"r", "SYNC"}, {"q", "EXIT"}})
+		keys := [][2]string{{"j/k", "SCAN"}, {"enter", "LINK"}, {"n", "SPAWN"}}
+		if m.cfg.Assistant.Enabled() {
+			keys = append(keys, [2]string{"A", "ASSIST"})
+		}
+		keys = append(keys, [2]string{"x", "ABORT"}, [2]string{"r", "SYNC"}, [2]string{"q", "EXIT"})
+		bottom = m.keybar(keys)
 	}
 	return body + "\n" + bottom
 }

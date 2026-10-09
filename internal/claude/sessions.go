@@ -30,6 +30,7 @@ type Session struct {
 	UpdatedAt int64  `json:"updatedAt"`
 	Version   string `json:"version"`
 	Kind      string `json:"kind"`
+	Name      string `json:"name"` // set by --name or /rename, else derived from cwd
 
 	Transcript string `json:"-"` // resolved transcript path
 	Profile    string `json:"-"` // key of the profile this session was found in
